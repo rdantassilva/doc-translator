@@ -11,8 +11,12 @@ Funciona de forma semelhante ao Whisper offline: baixa o modelo de tradução ne
 ## Instalação
 
 ```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
+
+> No Windows, use `venv\Scripts\activate` no lugar de `source venv/bin/activate`.
 
 ## Uso
 
