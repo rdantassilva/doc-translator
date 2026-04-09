@@ -110,6 +110,16 @@ def list_available_languages() -> None:
     print()
 
 
+def get_language_names(from_code: str, to_code: str) -> tuple[str, str]:
+    """Resolve language codes to human-readable names."""
+    import argostranslate.translate
+
+    installed = argostranslate.translate.get_installed_languages()
+    from_name = next((l.name for l in installed if l.code == from_code), from_code)
+    to_name = next((l.name for l in installed if l.code == to_code), to_code)
+    return from_name, to_name
+
+
 def translate_text_offline(text: str, from_code: str, to_code: str) -> str:
     """Translate text using a locally installed Argos model."""
     import argostranslate.translate
@@ -734,6 +744,9 @@ def main() -> None:
     to_code = args.target
 
     ensure_model_installed(from_code, to_code)
+
+    from_name, to_name = get_language_names(from_code, to_code)
+    print(f"\nTranslating from {from_name} to {to_name}\n")
 
     processors = {
         ".docx": process_docx,
