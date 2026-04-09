@@ -746,7 +746,8 @@ def main() -> None:
     ensure_model_installed(from_code, to_code)
 
     from_name, to_name = get_language_names(from_code, to_code)
-    print(f"\nTranslating from {from_name} to {to_name}\n")
+    msg = f"Translating from {from_name} to {to_name}"
+    print(f"\n── {msg} ──\n")
 
     processors = {
         ".docx": process_docx,
