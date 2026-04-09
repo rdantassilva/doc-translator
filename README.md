@@ -11,8 +11,12 @@ Funciona de forma semelhante ao Whisper offline: baixa o modelo de tradução ne
 ## Instalação
 
 ```bash
+git clone https://github.com/rdantassilva/doc-translator.git
+cd doc-translator
+
 python3 -m venv venv
 source venv/bin/activate
+
 pip install -r requirements.txt
 ```
 
