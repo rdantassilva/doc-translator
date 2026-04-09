@@ -4,5 +4,6 @@ __pycache__/
 .DS_Store
 *.pdf
 *.docx
+*.epub
 ~$*
 .vscode/
