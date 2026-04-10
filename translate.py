@@ -16,6 +16,7 @@ Usage:
 import argparse
 import logging
 import os
+import re
 import sys
 import textwrap
 import time
@@ -225,36 +226,89 @@ def read_epub(path: str) -> list[dict]:
 # Paragraph reconstruction
 # ---------------------------------------------------------------------------
 
-def merge_lines_into_paragraphs(text: str) -> str:
+_SENTENCE_END = re.compile(r"[.!?:;]\s*$")
+_PAGE_NUM = re.compile(r"^\s*\d{1,4}\s*$")
+_HEADING_LIKE = re.compile(
+    r"^(\d{1,2}[\s.)\-–—]+[A-ZÀ-Ú]|Cap[ií]tulo|CAPÍTULO|Introdu|Conclus|Refer[êe]ncias)",
+    re.IGNORECASE,
+)
+
+
+def _fix_pdf_ligatures(text: str) -> str:
+    """Fix broken typographic ligatures from PDF extraction.
+
+    PDF extractors sometimes split ligature glyphs ("fi", "fl", "ff")
+    with a space: "fi nanceiro" → "financeiro", "refl exão" → "reflexão".
+    Also replaces Unicode ligature codepoints (U+FB00–FB04).
     """
-    Reconstruct proper paragraphs from PDF-extracted text.
+    text = text.replace("\ufb00", "ff")
+    text = text.replace("\ufb01", "fi")
+    text = text.replace("\ufb02", "fl")
+    text = text.replace("\ufb03", "ffi")
+    text = text.replace("\ufb04", "ffl")
+
+    _lower = r"[a-záàâãéèêíïóôõúüç]"
+    text = re.sub(rf"fi\s+(?={_lower})", "fi", text)
+    text = re.sub(rf"fl\s+(?={_lower})", "fl", text)
+    text = re.sub(rf"ff\s+(?={_lower})", "ff", text)
+    return text
+
+
+def merge_lines_into_paragraphs(text: str) -> str:
+    """Reconstruct proper paragraphs from PDF-extracted text.
 
     PDF extraction produces one line per visual line, breaking paragraphs
-    arbitrarily. This merges consecutive lines that belong to the same
-    paragraph using line length as the primary signal: a short line
-    followed by a new sentence likely marks a real paragraph boundary.
+    arbitrarily.  This merges consecutive lines that belong to the same
+    paragraph.
+
+    Key rules (aligned with doc2audio's ``_rebuild_pdf_paragraphs``):
+    - Blank lines only flush a paragraph when the accumulated text ends with
+      sentence-terminal punctuation (``.!?:;``).  Otherwise the blank line is
+      treated as extraction noise and the paragraph continues.
+    - Lines that look like page numbers are discarded.
+    - Lines that look like headings (ALL CAPS or "Capítulo …" patterns) always
+      start a new paragraph.
+    - Bullet / numbered-list items always start a new paragraph.
+    - A new paragraph starts when the previous line ends with sentence-terminal
+      punctuation **and** the next line begins with an uppercase letter.
     """
-    lines = text.split("\n")
+    lines = text.splitlines()
     if not lines:
         return text
-
-    stripped_lines = [l.strip() for l in lines if l.strip()]
-    if not stripped_lines:
-        return text
-
-    lengths = [len(l) for l in stripped_lines if len(l) > 10]
-    avg_len = sum(lengths) / len(lengths) if lengths else 80
-    short_threshold = avg_len * 0.6
 
     paragraphs: list[str] = []
     current: list[str] = []
 
     for line in lines:
         stripped = line.strip()
+
         if not stripped:
+            if current and _SENTENCE_END.search(current[-1]):
+                paragraphs.append(" ".join(current))
+                current = []
+            continue
+
+        if _PAGE_NUM.match(stripped):
+            continue
+
+        is_heading = (
+            stripped.isupper() and len(stripped) > 3
+        ) or _HEADING_LIKE.match(stripped)
+
+        is_list_item = (
+            stripped.startswith(("•", "-", "–", "—", "▪"))
+        ) or (
+            len(stripped) > 2 and stripped[0].isdigit() and stripped[1] in ".)"
+        )
+
+        if is_heading or is_list_item:
             if current:
                 paragraphs.append(" ".join(current))
                 current = []
+            if is_heading:
+                paragraphs.append(stripped)
+            else:
+                current.append(stripped)
             continue
 
         if not current:
@@ -262,23 +316,9 @@ def merge_lines_into_paragraphs(text: str) -> str:
             continue
 
         prev = current[-1]
-        prev_is_short = len(prev) < short_threshold
+        starts_upper = stripped[0].isupper() if stripped else False
 
-        starts_new_paragraph = (
-            prev_is_short
-            and prev.endswith((".", "!", "?"))
-            and stripped[0].isupper()
-        ) or (
-            len(prev) < 40
-            and not prev.endswith(",")
-            and stripped[0].isupper()
-        ) or (
-            stripped.startswith(("•", "-", "–", "—", "▪"))
-        ) or (
-            len(stripped) > 2 and stripped[0].isdigit() and stripped[1] in ".)"
-        )
-
-        if starts_new_paragraph:
+        if _SENTENCE_END.search(prev) and starts_upper:
             paragraphs.append(" ".join(current))
             current = [stripped]
         else:
@@ -287,7 +327,8 @@ def merge_lines_into_paragraphs(text: str) -> str:
     if current:
         paragraphs.append(" ".join(current))
 
-    return "\n".join(paragraphs)
+    result = "\n".join(paragraphs)
+    return _fix_pdf_ligatures(result)
 
 
 # ---------------------------------------------------------------------------
