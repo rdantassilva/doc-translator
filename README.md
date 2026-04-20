@@ -27,14 +27,16 @@ pip install -r requirements.txt
 ```bash
 # Traduzir DOCX de Inglês para Português (padrão)
 python translate.py documento.docx
+# Gera: pb - documento.docx + pb - documento.html
 
 # Traduzir PDF de Inglês para Espanhol
 python translate.py artigo.pdf --source en --target es
+# Gera: es - artigo.docx + es - artigo.pdf + es - artigo.html
 
 # Traduzir EPUB de Francês para Português Brasil
 python translate.py livro.epub --source fr --target pb
 
-# Definir caminho de saída personalizado
+# Renomear apenas o arquivo de saída principal
 python translate.py report.docx --output relatorio_traduzido.docx
 ```
 
@@ -62,7 +64,7 @@ python translate.py --list-langs
 | `--target`, `-t` | `pb` | Código do idioma de destino |
 | `--no-format` | off | Desabilita a formatação automática do DOCX |
 | `--chunk-size` | `2000` | Caracteres máximos por bloco de tradução |
-| `--output`, `-o` | auto | Caminho do arquivo de saída |
+| `--output`, `-o` | auto | Nome do arquivo principal de saída (sem diretórios) |
 | `--setup FROM TO` | — | Baixar modelo de tradução |
 | `--list-langs` | — | Listar idiomas disponíveis |
 | `--verbose` | off | Ativa logs detalhados |
@@ -71,9 +73,16 @@ python translate.py --list-langs
 
 | Entrada | Saída |
 |---|---|
-| `.docx` | `.docx` (preserva estilos básicos) |
-| `.pdf` | `.docx` + `.pdf` (ambos gerados automaticamente) |
+| `.docx` | `.docx` + `.html` (DOCX preserva estilos básicos) |
+| `.pdf` | `.docx` + `.pdf` + `.html` (gerados automaticamente) |
 | `.epub` | `.epub` (preserva estrutura e metadados) |
+
+### Observações sobre `--output`
+
+- O `--output` renomeia apenas o **primeiro arquivo** gerado pelo fluxo.
+- Para entrada `.docx`, o primeiro arquivo é o `.docx`.
+- Para entrada `.pdf`, o primeiro arquivo é o `.docx` (PDF e HTML mantêm nome automático).
+- Por segurança, aceite apenas nome de arquivo (sem caminho/pastas).
 
 ## Idiomas comuns
 

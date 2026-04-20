@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import html
 import logging
 import os
 import re
@@ -529,6 +530,41 @@ def write_pdf(pages: list[dict], translated_texts: list[str], output_path: str, 
     pdf.output(output_path)
 
 
+def write_html(paragraphs: list[str], output_path: str, title: str = "") -> None:
+    """Create a simple standalone HTML document from translated paragraphs."""
+    safe_title = html.escape(title or "Translated document")
+    html_lines = [
+        "<!doctype html>",
+        '<html lang="en">',
+        "<head>",
+        '  <meta charset="utf-8">',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1">',
+        f"  <title>{safe_title}</title>",
+        "  <style>",
+        "    body { font-family: Arial, sans-serif; max-width: 840px; margin: 40px auto; line-height: 1.6; color: #111; padding: 0 16px; }",
+        "    h1 { font-size: 1.6rem; margin-bottom: 1rem; }",
+        "    p { margin: 0 0 0.9rem; text-align: justify; }",
+        "    .page-sep { color: #666; text-align: center; font-size: 0.85rem; margin: 1.2rem 0; }",
+        "  </style>",
+        "</head>",
+        "<body>",
+        f"  <h1>{safe_title}</h1>",
+    ]
+
+    for para in paragraphs:
+        stripped = para.strip()
+        if not stripped:
+            continue
+        safe_para = html.escape(stripped)
+        if safe_para.startswith("— p.") and safe_para.endswith("—"):
+            html_lines.append(f'  <div class="page-sep">{safe_para}</div>')
+        else:
+            html_lines.append(f"  <p>{safe_para}</p>")
+
+    html_lines.extend(["</body>", "</html>"])
+    Path(output_path).write_text("\n".join(html_lines), encoding="utf-8")
+
+
 def format_docx(path: str) -> None:
     """Apply clean, uniform formatting to an existing DOCX file."""
     import docx
@@ -625,7 +661,15 @@ def get_output_path(input_path: str, to_code: str, ext_override: str | None = No
     return str(p.with_name(f"{to_code} - {p.stem}{ext}"))
 
 
-def process_docx(input_path: str, from_code: str, to_code: str, chunk_size: int) -> str:
+def _is_within_directory(candidate_path: str, base_dir: str) -> bool:
+    """Return True when candidate_path resolves under base_dir."""
+    try:
+        return os.path.commonpath([candidate_path, base_dir]) == base_dir
+    except ValueError:
+        return False
+
+
+def process_docx(input_path: str, from_code: str, to_code: str, chunk_size: int) -> tuple[str, str]:
     logger.info("Reading DOCX: %s", input_path)
     paragraphs = read_docx(input_path)
     logger.info("Found %d paragraphs", len(paragraphs))
@@ -643,10 +687,13 @@ def process_docx(input_path: str, from_code: str, to_code: str, chunk_size: int)
 
     output_path = get_output_path(input_path, to_code)
     write_docx(paragraphs, translated, output_path)
-    return output_path
+    html_path = get_output_path(input_path, to_code, ext_override=".html")
+    title = Path(input_path).stem
+    write_html(translated, html_path, title=title)
+    return output_path, html_path
 
 
-def process_pdf(input_path: str, from_code: str, to_code: str, chunk_size: int) -> str:
+def process_pdf(input_path: str, from_code: str, to_code: str, chunk_size: int) -> tuple[str, str, str]:
     logger.info("Reading PDF: %s", input_path)
     pages = read_pdf(input_path)
     logger.info("Found %d pages with text", len(pages))
@@ -665,7 +712,15 @@ def process_pdf(input_path: str, from_code: str, to_code: str, chunk_size: int) 
     pdf_path = get_output_path(input_path, to_code, ext_override=".pdf")
     write_pdf(pages, translated, pdf_path, title=title)
 
-    return docx_path, pdf_path
+    html_path = get_output_path(input_path, to_code, ext_override=".html")
+    html_paragraphs: list[str] = []
+    for page_data, translated_page in zip(pages, translated):
+        html_paragraphs.append(f"— p. {page_data['page']} —")
+        merged = merge_lines_into_paragraphs(translated_page)
+        html_paragraphs.extend(merged.split("\n"))
+    write_html(html_paragraphs, html_path, title=title)
+
+    return docx_path, pdf_path, html_path
 
 
 def process_epub(input_path: str, from_code: str, to_code: str, chunk_size: int) -> str:
@@ -801,29 +856,35 @@ def main() -> None:
     result = processors[suffix](input_path, from_code, to_code, args.chunk_size)
 
     if suffix == ".pdf":
-        docx_path, pdf_path = result
+        docx_path, pdf_path, html_path = result
         if not args.no_format:
             format_docx(docx_path)
-        output_files = [docx_path, pdf_path]
+        output_files = [docx_path, pdf_path, html_path]
+    elif suffix == ".docx":
+        docx_path, html_path = result
+        output_files = [docx_path, html_path]
     else:
         output_files = [result]
 
     if args.output:
-        import shutil
-
         cwd = os.path.realpath(os.getcwd())
 
-        resolved_dest = os.path.realpath(args.output)
-        if not resolved_dest.startswith(cwd + os.sep):
-            print("Error: output path must be within the current working directory.")
+        output_name = Path(args.output).name
+        if output_name != args.output:
+            print("Error: --output must be a file name, without directory components.")
+            sys.exit(1)
+
+        resolved_dest = os.path.realpath(os.path.join(cwd, output_name))
+        if not _is_within_directory(resolved_dest, cwd):
+            print("Error: output path must stay inside the current working directory.")
             sys.exit(1)
 
         resolved_source = os.path.realpath(output_files[0])
-        if not resolved_source.startswith(cwd + os.sep):
+        if not _is_within_directory(resolved_source, cwd):
             print("Error: generated output path is outside the working directory.")
             sys.exit(1)
 
-        shutil.move(resolved_source, resolved_dest)
+        os.replace(resolved_source, resolved_dest)
         output_files[0] = resolved_dest
 
     elapsed = time.time() - start_time
