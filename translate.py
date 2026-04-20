@@ -669,6 +669,55 @@ def _is_within_directory(candidate_path: str, base_dir: str) -> bool:
         return False
 
 
+def _resolve_output_targets(
+    output_files: list[str],
+    custom_output: str | None,
+    cwd: str,
+) -> list[str]:
+    """
+    Resolve final output destinations.
+
+    Rules:
+    - No --output: move all generated files to ./output/
+    - --output without directory: use ./output/<name> for main output
+    - --output with directory: use provided directory for all outputs
+    """
+    default_output_dir = os.path.realpath(os.path.join(cwd, "output"))
+
+    if custom_output:
+        requested = Path(custom_output)
+        base_name = requested.name
+        parent = str(requested.parent)
+
+        if parent in ("", "."):
+            target_dir = default_output_dir
+        else:
+            if requested.is_absolute():
+                target_dir = os.path.realpath(parent)
+            else:
+                target_dir = os.path.realpath(os.path.join(cwd, parent))
+    else:
+        target_dir = default_output_dir
+        base_name = Path(output_files[0]).name
+
+    if not _is_within_directory(target_dir, cwd):
+        print("Error: output directory must be inside the current working directory.")
+        sys.exit(1)
+
+    os.makedirs(target_dir, exist_ok=True)
+
+    destinations: list[str] = []
+    for idx, source_path in enumerate(output_files):
+        filename = base_name if idx == 0 else Path(source_path).name
+        resolved_dest = os.path.realpath(os.path.join(target_dir, filename))
+        if not _is_within_directory(resolved_dest, cwd):
+            print("Error: output path must stay inside the current working directory.")
+            sys.exit(1)
+        destinations.append(resolved_dest)
+
+    return destinations
+
+
 def process_docx(input_path: str, from_code: str, to_code: str, chunk_size: int) -> tuple[str, str]:
     logger.info("Reading DOCX: %s", input_path)
     paragraphs = read_docx(input_path)
@@ -780,7 +829,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output", "-o",
         default=None,
-        help="Custom output file path (auto-generated if omitted)",
+        help="Custom main output path. If no directory is provided, uses ./output/",
     )
     parser.add_argument(
         "--no-format",
@@ -866,26 +915,16 @@ def main() -> None:
     else:
         output_files = [result]
 
-    if args.output:
-        cwd = os.path.realpath(os.getcwd())
-
-        output_name = Path(args.output).name
-        if output_name != args.output:
-            print("Error: --output must be a file name, without directory components.")
+    cwd = os.path.realpath(os.getcwd())
+    output_targets = _resolve_output_targets(output_files, args.output, cwd)
+    for idx, (source, target) in enumerate(zip(output_files, output_targets)):
+        resolved_source = os.path.realpath(source)
+        if not os.path.isfile(resolved_source):
+            print(f"Error: generated output not found: {resolved_source}")
             sys.exit(1)
-
-        resolved_dest = os.path.realpath(os.path.join(cwd, output_name))
-        if not _is_within_directory(resolved_dest, cwd):
-            print("Error: output path must stay inside the current working directory.")
-            sys.exit(1)
-
-        resolved_source = os.path.realpath(output_files[0])
-        if not _is_within_directory(resolved_source, cwd):
-            print("Error: generated output path is outside the working directory.")
-            sys.exit(1)
-
-        os.replace(resolved_source, resolved_dest)
-        output_files[0] = resolved_dest
+        if resolved_source != target:
+            os.replace(resolved_source, target)
+        output_files[idx] = target
 
     elapsed = time.time() - start_time
     minutes, seconds = divmod(int(elapsed), 60)

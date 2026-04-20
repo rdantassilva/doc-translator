@@ -27,17 +27,20 @@ pip install -r requirements.txt
 ```bash
 # Traduzir DOCX de Inglês para Português (padrão)
 python translate.py documento.docx
-# Gera: pb - documento.docx + pb - documento.html
+# Gera em output/: pb - documento.docx + pb - documento.html
 
 # Traduzir PDF de Inglês para Espanhol
 python translate.py artigo.pdf --source en --target es
-# Gera: es - artigo.docx + es - artigo.pdf + es - artigo.html
+# Gera em output/: es - artigo.docx + es - artigo.pdf + es - artigo.html
 
 # Traduzir EPUB de Francês para Português Brasil
 python translate.py livro.epub --source fr --target pb
 
-# Renomear apenas o arquivo de saída principal
+# Renomear apenas o arquivo de saída principal (em output/)
 python translate.py report.docx --output relatorio_traduzido.docx
+
+# Definir pasta e nome customizados para o arquivo principal
+python translate.py artigo.pdf --output revisoes/es/artigo_traduzido.docx
 ```
 
 Na primeira execução para um par de idiomas, o modelo será baixado automaticamente. Depois disso, funciona totalmente offline.
@@ -64,7 +67,7 @@ python translate.py --list-langs
 | `--target`, `-t` | `pb` | Código do idioma de destino |
 | `--no-format` | off | Desabilita a formatação automática do DOCX |
 | `--chunk-size` | `2000` | Caracteres máximos por bloco de tradução |
-| `--output`, `-o` | auto | Nome do arquivo principal de saída (sem diretórios) |
+| `--output`, `-o` | auto | Caminho do arquivo principal de saída |
 | `--setup FROM TO` | — | Baixar modelo de tradução |
 | `--list-langs` | — | Listar idiomas disponíveis |
 | `--verbose` | off | Ativa logs detalhados |
@@ -80,9 +83,12 @@ python translate.py --list-langs
 ### Observações sobre `--output`
 
 - O `--output` renomeia apenas o **primeiro arquivo** gerado pelo fluxo.
+- Sem `--output`, os arquivos são salvos em `output/` automaticamente.
+- Com `--output` sem pasta (ex.: `relatorio.docx`), o arquivo principal vai para `output/relatorio.docx`.
+- Com `--output` com pasta (ex.: `revisoes/relatorio.docx`), todos os arquivos vão para essa pasta.
 - Para entrada `.docx`, o primeiro arquivo é o `.docx`.
 - Para entrada `.pdf`, o primeiro arquivo é o `.docx` (PDF e HTML mantêm nome automático).
-- Por segurança, aceite apenas nome de arquivo (sem caminho/pastas).
+- Por segurança, a pasta de destino deve estar dentro do diretório atual do projeto.
 
 ## Idiomas comuns
 
